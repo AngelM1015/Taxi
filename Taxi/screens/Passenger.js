@@ -5,7 +5,9 @@ import {
   Text,
   View,
   Keyboard,
-  TouchableHighlight
+  TouchableHighlight,
+  ActivityIndicator,
+  Image
 } from "react-native";
 import MapView, { Polyline, Marker } from "react-native-maps";
 import _ from "lodash";
@@ -25,7 +27,8 @@ export default class Passenger extends Component {
       predictions: [],
       pointCoords: [],
       routeResponse: {},
-      lookingForDriver: false
+      lookingForDriver: false,
+      driverOTW: false
     };
     this.onChangeDestinationDebounced = _.debounce(
       this.onChangeDestination,
@@ -99,18 +102,48 @@ export default class Passenger extends Component {
   }
 
   async requestDriver() {
+    this.setState({lookingForDriver: true})
     var socket = socketIO.connect("http://10.0.1.6:3000");
 
-    socket.on("connect", () => {
+    socket.on("connect", driverLocation => {
       console.log("client connected");
       //Request a taxi!
       socket.emit("taxiRequest", this.state.routeResponse);
     });
+  socket.on("driverLocation", driverLocation =>{
+    const pointCoords = [...this.state.pointCoords, driverLocation];
+    this.map.fitToCoordinates(pointCoords, { 
+      edgePadding: { top: 20, bottom: 20, left: 20, right: 20 }
+    });
+    this.setState({
+      lookingForDriver: false,
+      driverOTW: true,
+      driverLocation: driverLocation
+    });
+  });
   }
 
   render() {
     let marker = null;
     let getDriver = null;
+    let findingDriverActIndicator = null;
+    let driverMarker = null;
+
+    if(this.state.driverOTW) {
+      driverMarker = (<Marker coordinate={this.state.driverLocation}>
+        <Image 
+        source={require("../images/car.png")}
+        style={{ width: 40, height: 40}}/>
+        </Marker>)
+    }
+
+    if(this.state.lookingForDriver) {
+      findingDriverActIndicator = (<ActivityIndicator
+         size="large" 
+         animating={this.state.lookingForDriver}
+        />
+      )
+    }
 
     if (this.state.pointCoords.length > 1) {
       marker = (
@@ -122,7 +155,9 @@ export default class Passenger extends Component {
         <BottomButton
           onPressFunction={() => this.requestDriver()}
           buttonText="REQUEST 🚗"
-        />
+        >
+          {findingDriverActIndicator}
+        </BottomButton>
       );
     }
 
@@ -151,7 +186,7 @@ export default class Passenger extends Component {
             this.map = map;
           }}
           style={styles.map}
-          region={{
+          initialRegion={{
             latitude: this.state.latitude,
             longitude: this.state.longitude,
             latitudeDelta: 0.015,
@@ -165,6 +200,7 @@ export default class Passenger extends Component {
             strokeColor="red"
           />
           {marker}
+          {driverMarker}
         </MapView>
         <TextInput
           placeholder="Enter destination..."
